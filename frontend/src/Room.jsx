@@ -27,38 +27,65 @@ function Room() {
       const ans=await peer.getAnswer(offer)
       socket.emit('call accepted',{to:from,ans})
     },[socket])
+    const sendStreams=useCallback(()=>{
+      for(const track of myStream.getTracks()){
+        peer.peer.addTrack(track,myStream);
+      }
+    },[myStream])
     const handleCallAccepted=useCallback(async({from,ans})=>{
 console.log(from,ans)
 peer.setLocalDescription(ans)
 console.log('Accepted!')
-for(const track of myStream.getTracks()){
-  peer.peer.addTrack(track,myStream);
+sendStreams()
+    },[sendStreams])
+
+const handleNegotitation=useCallback(async()=>{
+const offer=await peer.getOffer()
+socket.emit('negotitation needed',{offer,to:remoteSocketId})
+},[remoteSocketId,socket])
+
+useEffect(()=>{
+peer.peer.addEventListener('negotiationneeded',handleNegotitation)
+return()=>{
+  peer.peer.removeEventListener('negotiationneeded',handleNegotitation)
 }
-    },[myStream])
+},[handleNegotitation])
 
     useEffect(()=>{
       peer.peer.addEventListener('track',(e)=>{
         const remoteStream=e.streams
-        setRemoteStream(remoteStream)
+        setRemoteStream(remoteStream[0])
       })
+    },[])
+
+    const handleIncomingNegotiation=useCallback(async({from,offer})=>{
+const ans=await peer.getAnswer(offer)
+socket.emit('negotiation done',{to:from,ans})
+    },[socket])
+    const handleNegotitationFinal=useCallback(async({ans})=>{
+await peer.setLocalDescription(ans)
     },[])
     useEffect(()=>{
         socket.on('user joined', handleUserJoined);
         socket.on('incoming call',handleIncomingCall)
         socket.on('call accepted',handleCallAccepted)
+        socket.on('negotiation needed',handleIncomingNegotiation)
+        socket.on('negotiation final',handleNegotitationFinal)
         return()=>{
         socket.off('user joined',handleUserJoined)
         socket.off('incoming call',handleIncomingCall)
         socket.off('call accepted',handleCallAccepted)
-
+        socket.off('negotiation needed',handleIncomingNegotiation)
+        socket.off('negotiation final',handleNegotitationFinal)  
 
         }
-      },[socket, handleUserJoined, handleIncomingCall, handleCallAccepted])
+      },[socket, handleUserJoined, handleIncomingCall, handleCallAccepted, handleIncomingNegotiation, handleNegotitationFinal])
      
   return (
     <div>
    <h1>Room: {roomId} </h1>
    <p>{remoteSocketId?'connected':'No one in the room'}</p>
+   {myStream && <button onClick={sendStreams}>Send Stream</button>}
    {remoteSocketId && <button onClick={handleCallUser}>Call</button>}
   {myStream && <>
   <h1>My Stream</h1>
